@@ -1,5 +1,7 @@
 package core;
 
+
+
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.FileNotFoundException;
@@ -30,7 +32,10 @@ import org.json.JSONObject;
 
 public class DataConverter {
 
+	private static final String ES_INDEX = "wiener_linien";
+	private static final String ES_INDEX_TYPE = "departures";
 	private static final String SCRIPT_BAT = "../scripts/script.bat";
+	private static final String SCRIPT_BAT_REAL_TIME = "../scripts/scriptRealTime.bat";
 	
 	private static final int MAX_LINES_FOR_SPLITTED_FILE = 800001;
 	private static final int MAGIC_NUMBER_60 = 60;
@@ -39,6 +44,7 @@ public class DataConverter {
 	private static final String SPLIT_DATA_FILENAME = "../export/splitData_%d.json";
 	private static final int MAX_RBL = 8500;
 	private static final String FILENAME_JSON_FORMATED = "../export/newDataFormated.json";
+	private static final String REAL_TIME_TEMP_FILE = "../export/realTimeTempFile.json";
 	private static final int WAITINGTIME = 5;
 	
 	private String REQUEST_URL_All = "http://www.wienerlinien.at/ogd_realtime/monitor?%s&sender=Aq5inVKiQsJwRm9c";
@@ -54,7 +60,7 @@ public class DataConverter {
 	private List<String> runAll(int start, int end) {
 		List<String> JSONmonitorlist = new ArrayList<String>();
 		try {
-			List<String> responseJsonMessagelist = loadRealtimeData_all(start, end);
+			List<String> responseJsonMessagelist = loadRealtimeDataAll(start, end);
 			for (String responseJsonMessage :responseJsonMessagelist) {
 				JSONObject responseJsonObject = new JSONObject(responseJsonMessage);
 				JSONObject message = responseJsonObject.getJSONObject("message");
@@ -81,9 +87,8 @@ public class DataConverter {
 		return JSONmonitorlist;
 	}
 
-	private List<String> loadRealtimeData_all(int start, int end)
-			throws MalformedURLException, IOException, ProtocolException {
-		List<String> finalUrllist = buildURL_all(start, end);
+	private List<String> loadRealtimeDataAll(int start, int end) throws MalformedURLException, IOException, ProtocolException {
+		List<String> finalUrllist = buildURLAll(start, end);
 		List<String> JSONresponselist = new ArrayList<String>();
 
 		for (String finalUrl : finalUrllist) {
@@ -93,8 +98,8 @@ public class DataConverter {
 			con.setRequestProperty("User-Agent", "Mozilla/5.0");
 			int responseCode = con.getResponseCode();
 
-			logger.info("Sending 'GET' request to URL: " + finalUrl);
-			logger.info("Response Code : " + responseCode);
+			logger.debug("Sending 'GET' request to URL: " + finalUrl);
+			logger.debug("Response Code : " + responseCode);
 
 			BufferedReader in = new BufferedReader(new InputStreamReader(con.getInputStream()));
 			String inputLine;
@@ -108,7 +113,7 @@ public class DataConverter {
 		return JSONresponselist;
 	}
 
-	private List<String> buildURL_all(int start, int end) {
+	private List<String> buildURLAll(int start, int end) {
 		List<String> URLarray = new ArrayList<String>();
 		logger.info("Requesting rbl numbers " + start + " through " + end);
 
@@ -128,65 +133,71 @@ public class DataConverter {
 	private boolean process(int mode) throws IOException {
 		logger.info("Start process in mode "+mode);
 		//Step 1
-		if(mode == MODE_REALTIME)
-		
-		//Step 2: load json file
-		logger.info("Load json file");
-		BufferedReader input = loadFormattedDataFile();
-		if (input == null)
-			return false;
+		if(mode == MODE_REALTIME) {
+			for(int j=0;j<MAGIC_NUMBER_60;j++) {
+				
+				//Step 4: get real time data
+				logger.info("get real time data");
+				List<String> jsonMonitorList = runAll(0, MAX_RBL);
 
-		//Step 3: Split file
-		logger.info("Split json file");
-		splitFormattedData(input);
-
-		
-		String inputData;
-		for(int j=0;j<MAGIC_NUMBER_60;j++) {
+				//Step 7: process json file
+				int counterSuccess = 0;
+				int counterFailed = 0;
+				Writer output = new BufferedWriter(new FileWriter(REAL_TIME_TEMP_FILE));  //clears file every time
+				for (int i = 0; i < jsonMonitorList.size(); i++) {
+					try {
+						JSONObject indexJsonObject = null;
+						JSONObject newJsonObject   = null;
+						String[] jsonArray = convertDataFromInput(jsonMonitorList.get(i));
+						if (jsonArray != null){
+							indexJsonObject = new JSONObject(jsonArray[0]);
+							newJsonObject   = new JSONObject(jsonArray[1]);
+							output.append(indexJsonObject+ "\n");
+							output.append(newJsonObject+ "\n");
+							counterSuccess++;
+						} else {
+							counterFailed++;
+						}
+					} catch (JSONException e) {
+						logger.warn(e.getMessage());
+						counterFailed++;
+					}
+				}
+				output.close();
+				logger.info(counterSuccess + " have successfully been processed" +"\n"+ counterFailed + " have had an error");
+				
+				//Step 8: start script
+				logger.info("Start process Script");
+				processScriptRealTime();
+				logger.info("End process Script");
+				waitAWhile(WAITINGTIME);
+			}	
+		}
+		if(mode == MODE_MONGODB) {
 			
-			//Step 4: get real time data
-			logger.info("get real time data");
-			List<String> jsonMonitorList = runAll(0, MAX_RBL);
-
+			List<String> jsonMonitorList = null;
+			
+			
 			//Step 5: save real time data
 			logger.info("save real time data");
 			saveRealTimeData(jsonMonitorList);
 			
+			//Step 2: load json file
+			logger.info("Load json file");
+			BufferedReader input = loadFormattedDataFile();
+			if (input == null)
+				return false;
+			
 			//Step 6: load json file
 			logger.info("Load json file again");
 			input = loadFormattedDataFile();
-
-			//Step 7: process json file
-			int counterSuccess = 0;
-			int counterFailed = 0;
-			Writer output = new BufferedWriter(new FileWriter(FILENAME_JSON_FORMATED));  //clears file every time
-			while (( inputData = input.readLine() ) != null ) {
-				try {
-					JSONObject indexJsonObject = null;
-					JSONObject newJsonObject   = null;
-					String[] jsonArray = convertDataFromInput(inputData);
-					if (jsonArray != null){
-						indexJsonObject = new JSONObject(jsonArray[0]);
-						newJsonObject   = new JSONObject(jsonArray[1]);
-						output.append(indexJsonObject+ "\n");
-						output.append(newJsonObject+ "\n");
-						counterSuccess++;
-					} else {
-						counterFailed++;
-					}
-				} catch (JSONException e) {
-					logger.warn(e.getMessage());
-					counterFailed++;
-				}
-			}
-			output.close();
-			logger.info(counterSuccess + " have successfully been processed" +"\n"+ counterFailed + " have had an error");
 			
-			//Step 8: start script
-			logger.info("Start process Script");
-			processScript();
-			logger.info("End process Script");
-			waitAWhile(WAITINGTIME);
+			
+
+			//Step 3: Split file
+			logger.info("Split json file");
+			splitFormattedData(input);
+
 		}
 		return true;
 	}
@@ -199,9 +210,9 @@ public class DataConverter {
 		}
 	}
 
-	private void processScript() {
+	private void processScriptRealTime() {
 		try {
-			final Process p = Runtime.getRuntime().exec(SCRIPT_BAT);
+			final Process p = Runtime.getRuntime().exec(SCRIPT_BAT_REAL_TIME);
 			InputStream os = p.getInputStream();
 			InputStreamReader isr = new InputStreamReader(os);
 
@@ -213,12 +224,12 @@ public class DataConverter {
 				info += theChar;
 				data = isr.read();
 				if (i % 1000 == 0) {
-					logger.info(info);
+					logger.debug(info);
 					info = "";	
 				}
 				i++;
 			}
-			logger.info(info);
+			logger.debug(info);
 			isr.close();
 			isr = null;
 			os.close();
@@ -241,21 +252,25 @@ public class DataConverter {
 			logger.error("Problem creating json object");
 		}
 		
-		//				JSONObject _id =oldJsonObject.getJSONObject("_id");
-		//				String id = (String) _id.get("$oid");
+		String id = null;
+		try {
+			JSONObject _id =oldJsonObject.getJSONObject("_id");
+			id = (String) _id.get("$oid");
+		} catch (JSONException e1) {
+			logger.error("Problem reading _id");
+		}
 
 		JSONObject linesObject = null;
 		String name = "";
 		String richtungsId = "";
 		try {
-			JSONArray lines = (JSONArray) oldJsonObject.get("lines");
-			linesObject = lines.getJSONObject(0);
+			JSONArray linesArray = (JSONArray) oldJsonObject.get("lines");
+			linesObject = linesArray.getJSONObject(0);
 			name = (String) linesObject.get("name");
 			richtungsId = (String) linesObject.get("richtungsId");
 		} catch (JSONException e1) {
 			logger.error("Problem reading lines object");
 		}
-		
 	
 		String timePlanned = null;
 		String timeReal = null;
@@ -265,11 +280,33 @@ public class DataConverter {
 			JSONArray departure = (JSONArray) departures.get("departure");
 			JSONObject departureObject = departure.getJSONObject(0);
 			departureTime = departureObject.getJSONObject("departureTime");
-			
 		} catch (JSONException e1) {
 			logger.error("Problem reading departureTime");
 		}
-
+		Integer lineId=null;
+		try {
+			lineId = (Integer) linesObject.get("lineId");
+		} catch (JSONException e1) {
+			logger.error("Can not read lineId");
+		}
+		String type="";
+		try {
+			type = (String) linesObject.get("type");
+		} catch (JSONException e1) {
+			logger.error("Can not read lines[0].type");
+		}
+		Boolean barrierFree=null;
+		try {
+			barrierFree = (Boolean) linesObject.get("barrierFree");
+		} catch (JSONException e1) {
+			logger.error("Can not read lines[0].barrierFree");
+		}
+		Boolean trafficjam = null;
+		try {
+			trafficjam = (Boolean) linesObject.get("trafficjam");
+		} catch (JSONException e1) {
+			logger.error("Can not read lines[0].trafficjam");
+		}
 		Date timeP = null;
 		try {
 			timePlanned = (String) departureTime.get("timePlanned");
@@ -296,6 +333,7 @@ public class DataConverter {
 		Integer delay = calcDelay(timeR,timeP);
 		
 		String title = "";
+		String stationNumber ="";
 		JSONObject locationStop = null;
 		JSONObject properties = null;
 		try {
@@ -304,6 +342,11 @@ public class DataConverter {
 			title = (String) properties.get("title");
 		} catch (JSONException e1) {
 			logger.error("Can not read title ");
+		}
+		try {
+			stationNumber = (String) properties.get("name");
+		} catch (JSONException e1) {
+			logger.error("Can not read stationNumber (properties.name) ");
 		}
 		JSONArray location = null;
 		try {
@@ -320,7 +363,19 @@ public class DataConverter {
 			logger.error("Can not read attributes");
 		}
 		
-		StringBuilder sb = new StringBuilder();
+		StringBuilder header = new StringBuilder();
+		header.append("{\"index\":{\"_index\":\"");
+		header.append(ES_INDEX);
+		header.append("\",\"_type\":\"");
+		header.append(ES_INDEX_TYPE);
+		if(id != null){
+			header.append("\",\"_id\":\"");
+			header.append(id);
+			header.append("\"}}");
+		}else
+		{header.append("\"}}");}
+		
+		StringBuilder dataString = new StringBuilder();
 		String POST_FIX = "\":\"";
 		String POST_FIX2 = "\":";
 		String PRE_FIX = "\"";
@@ -329,53 +384,105 @@ public class DataConverter {
 		String KEY_VALUE_PAIR = PRE_FIX+"%s"+POST_FIX;
 		String KEY_VALUE_PAIR2 = PRE_FIX+"%s"+POST_FIX2;
 		
-		sb.append("{");
+		dataString.append("{");
 		if(name != null){
-			sb.append(String.format(KEY_VALUE_PAIR, "name"));
-			sb.append(name);
-			sb.append(DELIMITER);
+			dataString.append(String.format(KEY_VALUE_PAIR, "name"));
+			dataString.append(name);
+			dataString.append(DELIMITER);
+		}
+		if(stationNumber != null){
+			dataString.append(String.format(KEY_VALUE_PAIR, "stationNumber"));
+			dataString.append(stationNumber);
+			dataString.append(DELIMITER);
 		}
 		if(title != null){
-			sb.append(String.format(KEY_VALUE_PAIR, "title"));
-			sb.append(title);
-			sb.append(DELIMITER);
+			dataString.append(String.format(KEY_VALUE_PAIR, "title"));
+			dataString.append(title);
+			dataString.append(DELIMITER);
+		}
+		if(lineId != null){
+			dataString.append(String.format(KEY_VALUE_PAIR, "lineId"));
+			dataString.append(lineId);
+			dataString.append(DELIMITER);
 		}
 		if(rbl != null){
-			sb.append(String.format(KEY_VALUE_PAIR, "rbl"));
-			sb.append(rbl);
-			sb.append(DELIMITER);
+			dataString.append(String.format(KEY_VALUE_PAIR, "rbl"));
+			dataString.append(rbl);
+			dataString.append(DELIMITER);
 		}
 		if(richtungsId != null){
-			sb.append(String.format(KEY_VALUE_PAIR, "richtungsId"));
-			sb.append(richtungsId);
-			sb.append(DELIMITER);
+			dataString.append(String.format(KEY_VALUE_PAIR, "richtungsId"));
+			dataString.append(richtungsId);
+			dataString.append(DELIMITER);
+		}
+		if(type != null){
+			dataString.append(String.format(KEY_VALUE_PAIR, "type"));
+			dataString.append(type);
+			dataString.append(DELIMITER);
+		}
+		if(barrierFree != null){
+			dataString.append(String.format(KEY_VALUE_PAIR2, "barrierFree"));
+			dataString.append(barrierFree);
+			dataString.append(",");
 		}
 		if(delay != null){
-			sb.append(String.format(KEY_VALUE_PAIR2, "delay"));
-			sb.append(delay);
-			sb.append(",");
+			dataString.append(String.format(KEY_VALUE_PAIR2, "delay"));
+			dataString.append(delay);
+			dataString.append(",");
+		}
+		if(timePlanned != null){
+			dataString.append(String.format(KEY_VALUE_PAIR, "timePlanned"));
+			dataString.append(timePlanned);
+			dataString.append(DELIMITER);
+		}
+		if(timeReal != null){
+			dataString.append(String.format(KEY_VALUE_PAIR, "timeReal"));
+			dataString.append(timeReal);
+			dataString.append(DELIMITER);
+		}
+		if(trafficjam != null){
+			dataString.append(String.format(KEY_VALUE_PAIR2, "trafficjam"));
+			dataString.append(trafficjam);
+			dataString.append(",");
 		}
 		if(serverTime != null){
-			sb.append(String.format(KEY_VALUE_PAIR, "serverTime"));
-			sb.append(serverTime);
-			sb.append(DELIMITER);
+			dataString.append(String.format(KEY_VALUE_PAIR, "serverTime"));
+			dataString.append(serverTime);
+			dataString.append(DELIMITER);
 		}
 		if(location != null){
-			sb.append(String.format(KEY_VALUE_PAIR2, "location"));
-			sb.append(location);
+			dataString.append(String.format(KEY_VALUE_PAIR2, "location"));
+			dataString.append(location);
 		}
-		//TODO check last character is ,
-		sb.append("}");	
+//		if(summary != null){
+//			dataString.append(",");
+//			dataString.append(String.format(KEY_VALUE_PAIR, "summary"));
+//			dataString.append(summary);
+//			dataString.append(DELIMITER);
+//		}
+//		if(precipIntensity != null){
+//			dataString.append(String.format(KEY_VALUE_PAIR2, "precipIntensity"));
+//			dataString.append(precipIntensity);
+//			dataString.append(",");
+//		}
+//		if(temperature != null){
+//			dataString.append(String.format(KEY_VALUE_PAIR2, "temperature"));
+//			dataString.append(temperature);
+//			dataString.append(",");
+//		}
+//		if(visibility != null){
+//			dataString.append(String.format(KEY_VALUE_PAIR2, "visibility"));
+//			dataString.append(visibility);
+//		}
+		boolean lastCharCheck = dataString.toString().endsWith(",");
+		if(lastCharCheck) {
+			dataString.setLength(dataString.length() - 1);
+		}
+		dataString.append("}");	
 		
-		/*
-		String indexJsonString = "{ \"index\" : { \"_index\" : \"wiener_linien\", \"_type\" : \"departures\" } }";
-		String newJsonString = "{\"name\":\""+ name +"\",\"title\":\""+ title +"\",\"rbl\":"+ rbl +",\"richtungsId\":" + richtungsId +",\"delay\":"+ delay
-				+",\"serverTime\":\""+ serverTime +"\",\"location\":"+ location +"}";
-
-		 */
 		String[] returnValue = new String[2];
-		returnValue[0] = "{ \"index\" : { \"_index\" : \"wiener_linien\", \"_type\" : \"departures\" } }";
-		returnValue[1] = sb.toString();
+		returnValue[0] = header.toString();
+		returnValue[1] = dataString.toString();
 		
 		return returnValue;
 	}
@@ -425,9 +532,8 @@ public class DataConverter {
 		return input;
 	}
 
-
 	public static void main(String[] args) throws IOException {
-		PropertyConfigurator.configureAndWatch("../conf/DataConverter.log4j.properties");
+		PropertyConfigurator.configureAndWatch("../conf/core.DataConverter.log4j.properties");
 		DataConverter converter = new DataConverter();
 		boolean ok =converter.process(MODE_REALTIME);
 		if(!ok){
