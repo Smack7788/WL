@@ -32,6 +32,8 @@ import org.json.JSONObject;
 
 public class DataConverter {
 
+	private static final String INDEX_HEADER_WEATHER = "{\"index\":{\"_index\":\"wiener_linien_weather\",\"_type\":\"weather\"}}";
+	private static final long INITIAL_DATA_COLLECTION_DATE = 1512082800;
 	private static final String ES_INDEX = "wiener_linien";
 	private static final String ES_INDEX_TYPE = "departures";
 	private static final String SCRIPT_BAT = "../scripts/script.bat";
@@ -51,9 +53,11 @@ public class DataConverter {
 	
 	public static int MODE_REALTIME = 0;
 	public static int MODE_MONGODB  = 1;
+	public static int MODE_WEATHER_DATA  = 2;
 	
 	
-	DateFormat dateFormat = new SimpleDateFormat("yyyy-mm-dd'T'hh:mm:ss.SSS");
+	
+	DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS");
 
 	private static Logger logger = Logger.getLogger(DataConverter.class); 
 
@@ -184,13 +188,13 @@ public class DataConverter {
 			
 			//Step 2: load json file
 			logger.info("Load json file");
-			BufferedReader input = loadFormattedDataFile();
+			List<String> input = loadDataFile(FILENAME_JSON_FORMATED);
 			if (input == null)
 				return false;
 			
 			//Step 6: load json file
 			logger.info("Load json file again");
-			input = loadFormattedDataFile();
+			input = loadDataFile(FILENAME_JSON_FORMATED);
 			
 			
 
@@ -199,7 +203,122 @@ public class DataConverter {
 			splitFormattedData(input);
 
 		}
+		if(mode == MODE_WEATHER_DATA) {
+			logger.info("Load weather json file");
+			long timeStamp = INITIAL_DATA_COLLECTION_DATE;
+			String dateStamp = null;
+			
+			dateStamp = unixToFileDateConverter(timeStamp);
+			List<String> input = loadDataFile("E://dailyWeather_everyHour/dailyWeather_"+dateStamp+".json");
+			
+			try {
+				weatherDataFormatConverter(input);
+			} catch (JSONException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+			
+					
+			
+			
+		}
+		
 		return true;
+	}
+
+	public void weatherDataFormatConverter(List<String> input) throws JSONException, IOException {
+		JSONObject weatherdata = new JSONObject(input.get(0));
+		JSONObject hourly;
+		Integer temperature = null;
+		Double visibility = null;
+		Double precipIntensity = null;
+		String summary = "";
+		Integer time = null;
+		Writer output = new BufferedWriter(new FileWriter("../sampleData/formattedSampleWeatherData.json"));
+		try {
+			hourly = weatherdata.getJSONObject("hourly");
+			JSONArray hourlyData = (JSONArray) hourly.get("data");
+			for(int i=0;i<hourlyData.length();i++) {
+				JSONObject hourWeather = hourlyData.getJSONObject(i);
+				summary = (String) hourWeather.get("summary");
+				time = (Integer) hourWeather.get("time");				
+				String serverTime = unixToServerTimeConverter(time);
+				
+				if (hourWeather.get("precipIntensity").getClass().equals(Double.class)){
+					precipIntensity = (Double) hourWeather.get("precipIntensity");
+				} else {
+					precipIntensity = new Double((Integer) hourWeather.get("precipIntensity"));
+				}
+				if (hourWeather.get("temperature").getClass().equals(Double.class)){
+					temperature = ((Double) hourWeather.get("temperature")).intValue();
+				} else {
+					temperature = (Integer) hourWeather.get("temperature");
+				}
+				
+				
+				try {
+					if (hourWeather.get("visibility").getClass().equals(Double.class)){
+						visibility = (Double) hourWeather.get("visibility");
+					} else {
+						visibility = new Double((Integer) hourWeather.get("visibility"));
+					}
+				} catch (JSONException e1) {
+					logger.error("Cannot read visibility");
+				}
+							
+				
+				StringBuilder dataString = new StringBuilder();
+				String POST_FIX = "\":\"";
+				String POST_FIX2 = "\":";
+				String PRE_FIX = "\"";
+				String DELIMITER = "\",";
+				
+				String KEY_VALUE_PAIR = PRE_FIX+"%s"+POST_FIX;
+				String KEY_VALUE_PAIR2 = PRE_FIX+"%s"+POST_FIX2;
+				
+				dataString.append("{");
+				dataString.append(String.format(KEY_VALUE_PAIR, "summary"));
+				dataString.append(summary);
+				dataString.append(DELIMITER);
+				dataString.append(String.format(KEY_VALUE_PAIR, "serverTime"));
+				dataString.append(serverTime);
+				dataString.append(DELIMITER);		
+				dataString.append(String.format(KEY_VALUE_PAIR2, "precipIntensity"));
+				dataString.append(precipIntensity);
+				dataString.append(",");
+				dataString.append(String.format(KEY_VALUE_PAIR2, "temperature"));
+				dataString.append(temperature);
+				dataString.append(",");
+				if(visibility != null){
+				dataString.append(String.format(KEY_VALUE_PAIR2, "visibility"));
+				dataString.append(visibility);
+				}
+				boolean lastCharCheck = dataString.toString().endsWith(",");
+				if(lastCharCheck) {
+					dataString.setLength(dataString.length() - 1);
+				}		
+				dataString.append("}");
+				output.append(INDEX_HEADER_WEATHER.toString()+"\n");
+				output.append(dataString.toString()+"\n");
+			}
+		} catch (JSONException e) {
+			logger.error("Cannot read weather data JSON");				
+		}
+		output.close();
+		return;
+	}
+
+	public String unixToServerTimeConverter(long time) {
+		Date date = new java.util.Date(time*1000L);
+		String serverTime = dateFormat.format(date);
+		return serverTime;
+	}
+
+	public String unixToFileDateConverter(long time) {
+		Date date = new java.util.Date(time*1000L); 
+		SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy_MM_dd");
+		String dateStamp = sdf.format(date);
+		return dateStamp;
 	}
 
 	private void waitAWhile(int timeInSeconds) {
@@ -287,32 +406,32 @@ public class DataConverter {
 		try {
 			lineId = (Integer) linesObject.get("lineId");
 		} catch (JSONException e1) {
-			logger.error("Can not read lineId");
+			logger.error("Cannot read lineId");
 		}
 		String type="";
 		try {
 			type = (String) linesObject.get("type");
 		} catch (JSONException e1) {
-			logger.error("Can not read lines[0].type");
+			logger.error("Cannot read lines[0].type");
 		}
 		Boolean barrierFree=null;
 		try {
 			barrierFree = (Boolean) linesObject.get("barrierFree");
 		} catch (JSONException e1) {
-			logger.error("Can not read lines[0].barrierFree");
+			logger.error("Cannot read lines[0].barrierFree");
 		}
 		Boolean trafficjam = null;
 		try {
 			trafficjam = (Boolean) linesObject.get("trafficjam");
 		} catch (JSONException e1) {
-			logger.error("Can not read lines[0].trafficjam");
+			logger.error("Cannot read lines[0].trafficjam");
 		}
 		Date timeP = null;
 		try {
 			timePlanned = (String) departureTime.get("timePlanned");
 			timeP = dateFormat.parse(timePlanned);
 		} catch (JSONException | ParseException e1) {
-			logger.error("Can not read timePlanned "+e1.getMessage());
+			logger.error("Cannot read timePlanned "+e1.getMessage());
 		}
 
 		Date timeR = null;
@@ -320,14 +439,14 @@ public class DataConverter {
 			timeReal = (String) departureTime.get("timeReal");
 			timeR = dateFormat.parse(timeReal);
 		} catch (JSONException | ParseException e1) {
-			logger.error("Can not read timeReal "+e1.getMessage());
+			logger.error("Cannot read timeReal "+e1.getMessage());
 		}
 		
 		String serverTime = null;
 		try {
 			serverTime = (String) oldJsonObject.get("serverTime");
 		} catch (JSONException e1) {
-			logger.error("Can not read serverTime");
+			logger.error("Cannot read serverTime");
 		}
 		
 		Integer delay = calcDelay(timeR,timeP);
@@ -341,26 +460,26 @@ public class DataConverter {
 			properties = locationStop.getJSONObject("properties");
 			title = (String) properties.get("title");
 		} catch (JSONException e1) {
-			logger.error("Can not read title ");
+			logger.error("Cannot read title ");
 		}
 		try {
 			stationNumber = (String) properties.get("name");
 		} catch (JSONException e1) {
-			logger.error("Can not read stationNumber (properties.name) ");
+			logger.error("Cannot read stationNumber (properties.name) ");
 		}
 		JSONArray location = null;
 		try {
 			JSONObject geometry = locationStop.getJSONObject("geometry");
 			location = (JSONArray) geometry.get("coordinates");
 		} catch (JSONException e1) {
-			logger.error("Can not read coordinates");
+			logger.error("Cannot read coordinates");
 		}
 		Integer rbl = null;
 		try {
 			JSONObject attributes = properties.getJSONObject("attributes");
 			rbl = (Integer) attributes.get("rbl");
 		} catch (JSONException e1) {
-			logger.error("Can not read attributes");
+			logger.error("Cannot read attributes");
 		}
 		
 		StringBuilder header = new StringBuilder();
@@ -503,13 +622,12 @@ public class DataConverter {
 		jsonOutput.close();
 	}
 
-	private void splitFormattedData(BufferedReader input) throws IOException {
-		String inputData;
+	private void splitFormattedData(List<String> input) throws IOException {
 		int fileCounter = 0;
 		int lineCounter = 0;
 		String fileName = String.format(SPLIT_DATA_FILENAME, fileCounter);
 		Writer output = new BufferedWriter(new FileWriter(fileName));
-		while (( inputData = input.readLine() ) != null) {
+		for (String inputData:input) {
 			lineCounter++;
 			if (lineCounter % MAX_LINES_FOR_SPLITTED_FILE == 0) {
 				output.close();
@@ -522,14 +640,16 @@ public class DataConverter {
 		}
 	}
 
-	private BufferedReader loadFormattedDataFile() {
+	public List<String> loadDataFile(String filePath) throws IOException {
 		BufferedReader input = null;
+		List<String> lines = new ArrayList<String>();
 		try {
-			input = new BufferedReader( new FileReader(FILENAME_JSON_FORMATED));
+			input = new BufferedReader( new FileReader(filePath));
+			lines.add(input.readLine());
 		} catch (FileNotFoundException e) {
 			logger.error(e.getMessage());
 		}
-		return input;
+		return lines;
 	}
 
 	public static void main(String[] args) throws IOException {
