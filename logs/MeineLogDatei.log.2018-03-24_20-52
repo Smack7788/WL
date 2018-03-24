@@ -1,0 +1,2 @@
+2018-03-24 20:52:29,795 INFO  [main] core.DataConverter: Start process in mode 1
+2018-03-24 20:52:41,216 INFO  [main] core.DataConverter: 1 JSON files have been created. 180000lines have been processed. 0.062421972534332085% done.

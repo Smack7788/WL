@@ -86,11 +86,11 @@ public class DataConverter {
 				}
 			}
 		} catch (MalformedURLException e) {
-			logger.error(e.getMessage());
+			logger.debug(e.getMessage());
 		} catch (IOException e) {
-			logger.error(e.getMessage());
+			logger.debug(e.getMessage());
 		} catch (JSONException e) {
-			logger.error(e.getMessage());
+			logger.debug(e.getMessage());
 		}
 		return JSONmonitorlist;
 	}
@@ -275,9 +275,12 @@ public class DataConverter {
 		}
 		int fileNumberCounter = 1;
 		int lineCounter = 1;
+		double progressPercentage; 
 		Writer output = new BufferedWriter(new FileWriter("E://entireDataFormattedSplit/splitData_"+fileNumberCounter+".json"));  //clears file every time
 		while(input.readLine()!=null) {
 			if (lineCounter % 180001 == 0) {
+				progressPercentage = Math.round((fileNumberCounter*180000) * 100.0/ 288360000.0);
+				logger.info(fileNumberCounter + " JSON files have been created. "+ fileNumberCounter*180000 + " lines have been processed. "+progressPercentage+"% done.");
 				fileNumberCounter++;
 				output.close();
 				output = new BufferedWriter(new FileWriter("E://entireDataFormattedSplit/splitData_"+fileNumberCounter+".json"));  //clears file every time
@@ -330,7 +333,7 @@ public class DataConverter {
 						visibility = new Double((Integer) hourWeather.get("visibility"));
 					}
 				} catch (JSONException e1) {
-					logger.error("Cannot read visibility");
+					logger.debug("Cannot read visibility");
 				}
 							
 				
@@ -369,7 +372,7 @@ public class DataConverter {
 				output.append(dataString.toString()+"\n");
 			}
 		} catch (JSONException e) {
-			logger.error("Cannot read weather data JSON");				
+			logger.debug("Cannot read weather data JSON");				
 		}
 		output.close();
 		return;
@@ -421,7 +424,7 @@ public class DataConverter {
 			os.close();
 			os = null;
 		} catch (final IOException e) {
-			logger.error(e.getMessage());
+			logger.debug(e.getMessage());
 		}
 	}
 
@@ -475,7 +478,7 @@ public class DataConverter {
 							visibility = new Double((Integer) hourWeather.get("visibility"));
 						}
 					} catch (JSONException e1) {
-						logger.error("Cannot read visibility");
+						logger.debug("Cannot read visibility");
 					}
 								
 					
@@ -508,7 +511,7 @@ public class DataConverter {
 					weatherDataMap.put(serverTime, dataString.toString());
 				}
 			} catch (JSONException e) {
-				logger.error("Cannot read weather data JSON");				
+				logger.debug("Cannot read weather data JSON");				
 			}
 			timeStamp=timeStamp+86400;
 			}		
@@ -526,7 +529,7 @@ public class DataConverter {
 		try {
 			oldJsonObject = new JSONObject(inputData);
 		} catch (JSONException e1) {
-			logger.error("Problem creating json object");
+			logger.debug("Problem creating json object");
 		}
 		
 		String id = null;
@@ -534,7 +537,7 @@ public class DataConverter {
 			JSONObject _id =oldJsonObject.getJSONObject("_id");
 			id = (String) _id.get("$oid");
 		} catch (JSONException e1) {
-			logger.error("Problem reading _id");
+			logger.debug("Problem reading _id");
 		}
 
 		JSONObject linesObject = null;
@@ -546,7 +549,7 @@ public class DataConverter {
 			name = (String) linesObject.get("name");
 			richtungsId = (String) linesObject.get("richtungsId");
 		} catch (JSONException e1) {
-			logger.error("Problem reading lines object");
+			logger.debug("Problem reading lines object");
 		}
 	
 		String timePlanned = null;
@@ -558,38 +561,38 @@ public class DataConverter {
 			JSONObject departureObject = departure.getJSONObject(0);
 			departureTime = departureObject.getJSONObject("departureTime");
 		} catch (JSONException e1) {
-			logger.error("Problem reading departureTime");
+			logger.debug("Problem reading departureTime");
 		}
 		Integer lineId=null;
 		try {
 			lineId = (Integer) linesObject.get("lineId");
 		} catch (JSONException e1) {
-			logger.error("Cannot read lineId");
+			logger.debug("Cannot read lineId");
 		}
 		String type="";
 		try {
 			type = (String) linesObject.get("type");
 		} catch (JSONException e1) {
-			logger.error("Cannot read lines[0].type");
+			logger.debug("Cannot read lines[0].type");
 		}
 		Boolean barrierFree=null;
 		try {
 			barrierFree = (Boolean) linesObject.get("barrierFree");
 		} catch (JSONException e1) {
-			logger.error("Cannot read lines[0].barrierFree");
+			logger.debug("Cannot read lines[0].barrierFree");
 		}
 		Boolean trafficjam = null;
 		try {
 			trafficjam = (Boolean) linesObject.get("trafficjam");
 		} catch (JSONException e1) {
-			logger.error("Cannot read lines[0].trafficjam");
+			logger.debug("Cannot read lines[0].trafficjam");
 		}
 		Date timeP = null;
 		try {
 			timePlanned = (String) departureTime.get("timePlanned");
 			timeP = dateFormat.parse(timePlanned);
 		} catch (JSONException | ParseException e1) {
-			logger.error("Cannot read timePlanned "+e1.getMessage());
+			logger.debug("Cannot read timePlanned "+e1.getMessage());
 		}
 
 		Date timeR = null;
@@ -597,14 +600,14 @@ public class DataConverter {
 			timeReal = (String) departureTime.get("timeReal");
 			timeR = dateFormat.parse(timeReal);
 		} catch (JSONException | ParseException e1) {
-			logger.error("Cannot read timeReal "+e1.getMessage());
+			logger.debug("Cannot read timeReal "+e1.getMessage());
 		}
 		
 		String serverTime = null;
 		try {
 			serverTime = (String) oldJsonObject.get("serverTime");
 		} catch (JSONException e1) {
-			logger.error("Cannot read serverTime");
+			logger.debug("Cannot read serverTime");
 		}
 		
 		Integer delay = calcDelay(timeR,timeP);
@@ -618,26 +621,26 @@ public class DataConverter {
 			properties = locationStop.getJSONObject("properties");
 			title = (String) properties.get("title");
 		} catch (JSONException e1) {
-			logger.error("Cannot read title ");
+			logger.debug("Cannot read title ");
 		}
 		try {
 			stationNumber = (String) properties.get("name");
 		} catch (JSONException e1) {
-			logger.error("Cannot read stationNumber (properties.name) ");
+			logger.debug("Cannot read stationNumber (properties.name) ");
 		}
 		JSONArray location = null;
 		try {
 			JSONObject geometry = locationStop.getJSONObject("geometry");
 			location = (JSONArray) geometry.get("coordinates");
 		} catch (JSONException e1) {
-			logger.error("Cannot read coordinates");
+			logger.debug("Cannot read coordinates");
 		}
 		Integer rbl = null;
 		try {
 			JSONObject attributes = properties.getJSONObject("attributes");
 			rbl = (Integer) attributes.get("rbl");
 		} catch (JSONException e1) {
-			logger.error("Cannot read attributes");
+			logger.debug("Cannot read attributes");
 		}
 		
 		StringBuilder header = new StringBuilder();
@@ -790,7 +793,7 @@ public class DataConverter {
 			input = new BufferedReader( new FileReader(filePath));
 			lines.add(input.readLine());
 		} catch (FileNotFoundException e) {
-			logger.error(e.getMessage());
+			logger.debug(e.getMessage());
 		}
 		return lines;
 	}
@@ -798,7 +801,7 @@ public class DataConverter {
 	public static void main(String[] args) throws IOException {
 		PropertyConfigurator.configureAndWatch("../conf/core.DataConverter.log4j.properties");
 		DataConverter converter = new DataConverter();
-		boolean ok =converter.process(MODE_ELKSTACK_IMPORT_DATA);
+		boolean ok =converter.process(MODE_MONGODB);
 		if(!ok){
 			System.exit(1);
 		}
