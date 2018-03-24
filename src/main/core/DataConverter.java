@@ -4,6 +4,7 @@ package core;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
+import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.FileWriter;
@@ -20,6 +21,7 @@ import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -47,6 +49,7 @@ public class DataConverter {
 	private static final int MAX_RBL = 8500;
 	private static final String FILENAME_JSON_FORMATED = "../export/newDataFormated.json";
 	private static final String REAL_TIME_TEMP_FILE = "../export/realTimeTempFile.json";
+	private static final String ENTIRE_DATA_FILE_PATH = "E://Mongodb/bin/entireData20180320.json";
 	private static final int WAITINGTIME = 5;
 	
 	private String REQUEST_URL_All = "http://www.wienerlinien.at/ogd_realtime/monitor?%s&sender=Aq5inVKiQsJwRm9c";
@@ -54,6 +57,7 @@ public class DataConverter {
 	public static int MODE_REALTIME = 0;
 	public static int MODE_MONGODB  = 1;
 	public static int MODE_WEATHER_DATA  = 2;
+	public static int MODE_ELKSTACK_IMPORT_DATA  = 3;
 	
 	
 	
@@ -144,26 +148,19 @@ public class DataConverter {
 				logger.info("get real time data");
 				List<String> jsonMonitorList = runAll(0, MAX_RBL);
 
+				HashMap<String, String> weatherDataMap = initializeWeatherDataMap();
+				
 				//Step 7: process json file
 				int counterSuccess = 0;
 				int counterFailed = 0;
 				Writer output = new BufferedWriter(new FileWriter(REAL_TIME_TEMP_FILE));  //clears file every time
 				for (int i = 0; i < jsonMonitorList.size(); i++) {
-					try {
-						JSONObject indexJsonObject = null;
-						JSONObject newJsonObject   = null;
-						String[] jsonArray = convertDataFromInput(jsonMonitorList.get(i));
-						if (jsonArray != null){
-							indexJsonObject = new JSONObject(jsonArray[0]);
-							newJsonObject   = new JSONObject(jsonArray[1]);
-							output.append(indexJsonObject+ "\n");
-							output.append(newJsonObject+ "\n");
-							counterSuccess++;
-						} else {
-							counterFailed++;
-						}
-					} catch (JSONException e) {
-						logger.warn(e.getMessage());
+					String[] jsonArray = convertDataFromInput(jsonMonitorList.get(i),weatherDataMap);
+					if (jsonArray != null){
+						output.append(jsonArray[0]+ "\n");
+						output.append(jsonArray[1]+ "\n");
+						counterSuccess++;
+					} else {
 						counterFailed++;
 					}
 				}
@@ -179,28 +176,31 @@ public class DataConverter {
 		}
 		if(mode == MODE_MONGODB) {
 			
-			List<String> jsonMonitorList = null;
+			HashMap<String, String> weatherDataMap = initializeWeatherDataMap();
+			mongoDataLoaderFormatterSplitter(ENTIRE_DATA_FILE_PATH,weatherDataMap);
+			
+//			List<String> jsonMonitorList = null;
 			
 			
-			//Step 5: save real time data
-			logger.info("save real time data");
-			saveRealTimeData(jsonMonitorList);
+//			//Step 5: save real time data
+//			logger.info("save real time data");
+//			saveRealTimeData(jsonMonitorList);
 			
-			//Step 2: load json file
-			logger.info("Load json file");
-			List<String> input = loadDataFile(FILENAME_JSON_FORMATED);
-			if (input == null)
-				return false;
+//			//Step 2: load json file
+//			logger.info("Load json file");
+//			List<String> input = loadDataFile(FILENAME_JSON_FORMATED);
+//			if (input == null)
+//				return false;
 			
-			//Step 6: load json file
-			logger.info("Load json file again");
-			input = loadDataFile(FILENAME_JSON_FORMATED);
+//			//Step 6: load json file
+//			logger.info("Load json file again");
+//			input = loadDataFile(FILENAME_JSON_FORMATED);
 			
 			
 
-			//Step 3: Split file
-			logger.info("Split json file");
-			splitFormattedData(input);
+//			//Step 3: Split file
+//			logger.info("Split json file");
+//			splitFormattedData(input);
 
 		}
 		if(mode == MODE_WEATHER_DATA) {
@@ -208,17 +208,39 @@ public class DataConverter {
 			long timeStamp = INITIAL_DATA_COLLECTION_DATE;
 			String dateStamp = null;
 			
+			while(timeStamp<1517526000) {
 			dateStamp = unixToFileDateConverter(timeStamp);
-			List<String> input = loadDataFile("E://dailyWeather_everyHour/dailyWeather_"+dateStamp+".json");
+			List<String> input = loadDataFile("E://weather/dailyWeather_everyHour/dailyWeather_"+dateStamp+".json");
 			
 			try {
-				weatherDataFormatConverter(input);
+				weatherDataFormatConverter(input,dateStamp);
 			} catch (JSONException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
+			timeStamp=timeStamp+86400;
+			}
 			
-					
+			
+		}
+		if(mode == MODE_ELKSTACK_IMPORT_DATA) {
+			File file = null;
+			int fileNumberCounter=1;
+			String fileName=""; 
+			Boolean fileExists=true;
+			String command = "";
+			
+			
+			while(fileExists) {
+			fileName ="E://entireDataFormattedSplit/splitData_"+fileNumberCounter+".json" ;
+			file = new File(fileName);
+			if(file.exists()) {
+			command = "curl -u elastic:6899869 -H Content-Type:application/x-ndjson -XPOST localhost:9200/wiener_linien/departures/_bulk?pretty --data-binary @"+fileName;
+			elkStackScriptUpload(command);
+			fileNumberCounter++;
+			}else 
+			{fileExists=false;}
+			}
 			
 			
 		}
@@ -226,7 +248,52 @@ public class DataConverter {
 		return true;
 	}
 
-	public void weatherDataFormatConverter(List<String> input) throws JSONException, IOException {
+	private void elkStackScriptUpload(String command) throws IOException {
+		
+		ProcessBuilder builder = new ProcessBuilder(
+	            "cmd.exe", "/c", command);
+	        builder.redirectErrorStream(true);
+	        Process p = builder.start();
+	        BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream()));
+	        String line;
+	        while (true) {
+	            line = r.readLine();
+	            if (line == null) { break; }
+	            System.out.println(line);
+	        }
+		
+		
+	}
+
+	private void mongoDataLoaderFormatterSplitter(String FilePath, HashMap<String, String> weatherDataMap) throws IOException {
+		BufferedReader input=null;
+		try {
+			 input = new BufferedReader( new FileReader(FilePath));
+		} catch (FileNotFoundException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		int fileNumberCounter = 1;
+		int lineCounter = 1;
+		Writer output = new BufferedWriter(new FileWriter("E://entireDataFormattedSplit/splitData_"+fileNumberCounter+".json"));  //clears file every time
+		while(input.readLine()!=null) {
+			if (lineCounter % 180001 == 0) {
+				fileNumberCounter++;
+				output.close();
+				output = new BufferedWriter(new FileWriter("E://entireDataFormattedSplit/splitData_"+fileNumberCounter+".json"));  //clears file every time
+				lineCounter = 1;
+			}
+			lineCounter++;
+				String[] jsonArray = convertDataFromInput(input.readLine(),weatherDataMap);
+				if (jsonArray != null){
+					output.append(jsonArray[0]+ "\n");
+					output.append(jsonArray[1]+ "\n");
+				}
+		}
+		output.close();
+	}
+
+	public void weatherDataFormatConverter(List<String> input, String dateStamp) throws JSONException, IOException {
 		JSONObject weatherdata = new JSONObject(input.get(0));
 		JSONObject hourly;
 		Integer temperature = null;
@@ -234,7 +301,7 @@ public class DataConverter {
 		Double precipIntensity = null;
 		String summary = "";
 		Integer time = null;
-		Writer output = new BufferedWriter(new FileWriter("../sampleData/formattedSampleWeatherData.json"));
+		Writer output = new BufferedWriter(new FileWriter("E://weather/dailyWeather_everyHourFormatted/dailyWeather_"+dateStamp+".json"));
 		try {
 			hourly = weatherdata.getJSONObject("hourly");
 			JSONArray hourlyData = (JSONArray) hourly.get("data");
@@ -358,11 +425,102 @@ public class DataConverter {
 		}
 	}
 
-	public String[] convertDataFromInput(String inputData) {
+	public HashMap<String, String> initializeWeatherDataMap() throws IOException{
+		
+		HashMap<String, String> weatherDataMap = new HashMap<String, String>();
+		
+		long timeStamp = INITIAL_DATA_COLLECTION_DATE;
+		String dateStamp = null;
+		while(timeStamp<1517526000) {
+			dateStamp = unixToFileDateConverter(timeStamp);
+			List<String> input = loadDataFile("E://weather/dailyWeather_everyHour/dailyWeather_"+dateStamp+".json");
+			JSONObject weatherdata=null;
+			try {
+				weatherdata = new JSONObject(input.get(0));
+			} catch (JSONException e2) {
+				// TODO Auto-generated catch block
+				e2.printStackTrace();
+			}
+			JSONObject hourly;
+			Integer temperature = null;
+			Double visibility = null;
+			Double precipIntensity = null;
+			String summary = "";
+			Integer time = null;
+			try {
+				hourly = weatherdata.getJSONObject("hourly");
+				JSONArray hourlyData = (JSONArray) hourly.get("data");
+				for(int i=0;i<hourlyData.length();i++) {
+					JSONObject hourWeather = hourlyData.getJSONObject(i);
+					summary = (String) hourWeather.get("summary");
+					time = (Integer) hourWeather.get("time");				
+					String serverTime = unixToServerTimeConverter(time);
+					serverTime = serverTime.substring(0, 13);
+					if (hourWeather.get("precipIntensity").getClass().equals(Double.class)){
+						precipIntensity = (Double) hourWeather.get("precipIntensity");
+					} else {
+						precipIntensity = new Double((Integer) hourWeather.get("precipIntensity"));
+					}
+					if (hourWeather.get("temperature").getClass().equals(Double.class)){
+						temperature = ((Double) hourWeather.get("temperature")).intValue();
+					} else {
+						temperature = (Integer) hourWeather.get("temperature");
+					}
+					
+					
+					try {
+						if (hourWeather.get("visibility").getClass().equals(Double.class)){
+							visibility = (Double) hourWeather.get("visibility");
+						} else {
+							visibility = new Double((Integer) hourWeather.get("visibility"));
+						}
+					} catch (JSONException e1) {
+						logger.error("Cannot read visibility");
+					}
+								
+					
+					StringBuilder dataString = new StringBuilder();
+					String POST_FIX = "\":\"";
+					String POST_FIX2 = "\":";
+					String PRE_FIX = "\"";
+					String DELIMITER = "\",";
+					
+					String KEY_VALUE_PAIR = PRE_FIX+"%s"+POST_FIX;
+					String KEY_VALUE_PAIR2 = PRE_FIX+"%s"+POST_FIX2;
+
+					dataString.append(String.format(KEY_VALUE_PAIR, "summary"));
+					dataString.append(summary);
+					dataString.append(DELIMITER);	
+					dataString.append(String.format(KEY_VALUE_PAIR2, "precipIntensity"));
+					dataString.append(precipIntensity);
+					dataString.append(",");
+					dataString.append(String.format(KEY_VALUE_PAIR2, "temperature"));
+					dataString.append(temperature);
+					dataString.append(",");
+					if(visibility != null){
+					dataString.append(String.format(KEY_VALUE_PAIR2, "visibility"));
+					dataString.append(visibility);
+					}
+					boolean lastCharCheck = dataString.toString().endsWith(",");
+					if(lastCharCheck) {
+						dataString.setLength(dataString.length() - 1);
+					}		
+					weatherDataMap.put(serverTime, dataString.toString());
+				}
+			} catch (JSONException e) {
+				logger.error("Cannot read weather data JSON");				
+			}
+			timeStamp=timeStamp+86400;
+			}		
+		return weatherDataMap;
+		
+	}
+	
+	
+	public String[] convertDataFromInput(String inputData, HashMap<String, String> weatherDataMap) {
 		if(inputData == null){
 			return null;
-		}
-		
+		}		
 		logger.debug(inputData);		
 		JSONObject oldJsonObject = null;
 		try {
@@ -572,27 +730,12 @@ public class DataConverter {
 		if(location != null){
 			dataString.append(String.format(KEY_VALUE_PAIR2, "location"));
 			dataString.append(location);
+			dataString.append(",");
 		}
-//		if(summary != null){
-//			dataString.append(",");
-//			dataString.append(String.format(KEY_VALUE_PAIR, "summary"));
-//			dataString.append(summary);
-//			dataString.append(DELIMITER);
-//		}
-//		if(precipIntensity != null){
-//			dataString.append(String.format(KEY_VALUE_PAIR2, "precipIntensity"));
-//			dataString.append(precipIntensity);
-//			dataString.append(",");
-//		}
-//		if(temperature != null){
-//			dataString.append(String.format(KEY_VALUE_PAIR2, "temperature"));
-//			dataString.append(temperature);
-//			dataString.append(",");
-//		}
-//		if(visibility != null){
-//			dataString.append(String.format(KEY_VALUE_PAIR2, "visibility"));
-//			dataString.append(visibility);
-//		}
+		
+		String timeCheck = serverTime.substring(0, 13);
+		dataString.append(weatherDataMap.get(timeCheck));
+		
 		boolean lastCharCheck = dataString.toString().endsWith(",");
 		if(lastCharCheck) {
 			dataString.setLength(dataString.length() - 1);
@@ -655,10 +798,11 @@ public class DataConverter {
 	public static void main(String[] args) throws IOException {
 		PropertyConfigurator.configureAndWatch("../conf/core.DataConverter.log4j.properties");
 		DataConverter converter = new DataConverter();
-		boolean ok =converter.process(MODE_REALTIME);
+		boolean ok =converter.process(MODE_ELKSTACK_IMPORT_DATA);
 		if(!ok){
 			System.exit(1);
 		}
 		System.exit(0);
 	}
 }
+
