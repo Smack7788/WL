@@ -1,0 +1,5 @@
+2018-03-24 20:59:07,136 INFO  [main] core.DataConverter: 27 JSON files have been created. 4860000 lines have been processed. 2.0% done.
+2018-03-24 20:59:17,351 INFO  [main] core.DataConverter: 28 JSON files have been created. 5040000 lines have been processed. 2.0% done.
+2018-03-24 20:59:27,890 INFO  [main] core.DataConverter: 29 JSON files have been created. 5220000 lines have been processed. 2.0% done.
+2018-03-24 20:59:40,280 INFO  [main] core.DataConverter: 30 JSON files have been created. 5400000 lines have been processed. 2.0% done.
+2018-03-24 20:59:50,887 INFO  [main] core.DataConverter: 31 JSON files have been created. 5580000 lines have been processed. 2.0% done.

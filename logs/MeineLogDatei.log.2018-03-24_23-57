@@ -1,0 +1,4 @@
+2018-03-24 23:57:32,921 INFO  [main] core.DataConverter: 801 JSON files have been created. 144180000 lines have been processed. 50.0% done.
+2018-03-24 23:57:41,718 INFO  [main] core.DataConverter: 802 JSON files have been created. 144360000 lines have been processed. 50.0% done.
+2018-03-24 23:57:50,117 INFO  [main] core.DataConverter: 803 JSON files have been created. 144540000 lines have been processed. 50.0% done.
+2018-03-24 23:57:57,831 INFO  [main] core.DataConverter: 804 JSON files have been created. 144720000 lines have been processed. 50.0% done.
