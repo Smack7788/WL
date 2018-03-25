@@ -277,8 +277,8 @@ public class DataConverter {
 		int lineCounter = 1;
 		double progressPercentage; 
 		Writer output = new BufferedWriter(new FileWriter("E://entireDataFormattedSplit/splitData_"+fileNumberCounter+".json"));  //clears file every time
-		String dataLine = input.readLine();
-		while(dataLine!=null) {
+		String dataLine =""; 
+		while((dataLine =input.readLine())!=null) {
 			if (lineCounter % 180001 == 0) {
 				progressPercentage = Math.round((fileNumberCounter*180000) * 100.0/ 288360000.0);
 				logger.info(fileNumberCounter + " JSON files have been created. "+ fileNumberCounter*180000 + " lines have been processed. "+progressPercentage+"% done.");
@@ -293,7 +293,6 @@ public class DataConverter {
 					output.append(jsonArray[0]+ "\n");
 					output.append(jsonArray[1]+ "\n");
 				}
-				dataLine= input.readLine();
 		}
 		output.close();
 	}
